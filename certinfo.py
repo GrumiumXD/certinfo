@@ -5,7 +5,6 @@ import subprocess
 from pathlib import Path
 
 
-
 def get_certificate_chunks(certificate_string):
     certificates = []
     cert = ""
@@ -45,7 +44,7 @@ def get_file_certificates(path):
 
 def print_cert_info_text(cert):
     result = subprocess.run(
-        ["openssl", "x509", "--text", "--noout"],
+        ["openssl", "x509", "--text", "--nameopt", "multiline", "--noout"],
         capture_output=True,
         text=True,
         input=cert,
@@ -53,32 +52,75 @@ def print_cert_info_text(cert):
 
     print(result.stdout)
 
+
 def print_issuer_info(cert):
-    pass
+    subject_hash = subprocess.run(
+        ["openssl", "x509", "--subject_hash", "--noout"],
+        capture_output=True,
+        text=True,
+        input=cert,
+    ).stdout.strip()
+
+    issuer_hash = subprocess.run(
+        ["openssl", "x509", "--issuer_hash", "--noout"],
+        capture_output=True,
+        text=True,
+        input=cert,
+    ).stdout.strip()
+
+    subject = subprocess.run(
+        ["openssl", "x509", "--subject", "--nameopt", "dn_rev", "--noout"],
+        capture_output=True,
+        text=True,
+        input=cert,
+    ).stdout.strip()
+    subject = subject.lstrip("subject=")
+
+    issuer = subprocess.run(
+        ["openssl", "x509", "--issuer", "--nameopt", "dn_rev", "--noout"],
+        capture_output=True,
+        text=True,
+        input=cert,
+    ).stdout.strip()
+    issuer = issuer.lstrip("issuer=")
+
+    print(f"S: {subject_hash} ({subject})\n\t|\n\tV\nI: {issuer_hash} ({issuer})")
+
 
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument(
-        "-o", "--output", choices=["text", "pem", "issuer"], default="text"
+        "-o",
+        "--output",
+        choices=["text", "pem", "issuer"],
+        default="text",
+        help="what information to display",
     )
 
-    subparsers = parser.add_subparsers(required=True, dest="option")
+    subparsers = parser.add_subparsers(
+        required=True, dest="subcommand", title="sub commands"
+    )
 
-    remote_parser = subparsers.add_parser("remote")
-    remote_parser.add_argument("host")
-    remote_parser.add_argument("-p", "--port", default=443, type=int)
+    remote_parser = subparsers.add_parser(
+        "remote", help="fetch and display certificate(s) from a remote server"
+    )
+    remote_parser.add_argument("host", help="host name for the remote server")
+    remote_parser.add_argument(
+        "-p", "--port", default=443, type=int, help="port for the remote service"
+    )
 
-    file_parser = subparsers.add_parser("file")
-    file_parser.add_argument("path")
+    file_parser = subparsers.add_parser(
+        "file", help="fetch and display certificate(s) from a local file"
+    )
+    file_parser.add_argument("path", help="path to the certificate file")
 
     args = parser.parse_args()
-    print(args)
 
-    certificates = []
-    if args.option == "remote":
-        certificates = get_remote_certificates(args.host, args.port)
-    else:
-        certificates = get_file_certificates(args.path)
+    certificates = (
+        get_remote_certificates(args.host, args.port)
+        if args.subcommand == "remote"
+        else get_file_certificates(args.path)
+    )
 
     for c in certificates:
         if args.output == "text":
@@ -87,9 +129,6 @@ def main():
             print_issuer_info(c)
         else:
             print(c)
-    # certs = get_remote_certificates("google.de")
-    # for c in certs:
-    #     print_cert_info(c)
 
 
 if __name__ == "__main__":
